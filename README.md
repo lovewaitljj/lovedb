@@ -1,2 +1,3 @@
 # lovedb
 基于bitcask的存储引擎lovedb
+在bitcask的基础上支持了http协议，redis数据结构和相关协议

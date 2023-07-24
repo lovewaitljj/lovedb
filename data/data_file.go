@@ -1,8 +1,19 @@
 package data
 
-import "lovedb/fio"
+import (
+	"errors"
+	"fmt"
+	"hash/crc32"
+	"io"
+	"lovedb/fio"
+	"path/filepath"
+)
 
 const DataFileNameSuffix = ".data"
+
+var (
+	ErrInvalidCRC = errors.New("invalid crc value, log record maybe corrupted")
+)
 
 // DataFile 数据文件
 // 嵌套用于IO读写的管理接口，由于是接口，后期可以接入别的例如mmap的io管理
@@ -14,22 +25,109 @@ type DataFile struct {
 
 // OpenDataFile 打开新的数据文件
 func OpenDataFile(dirPath string, fileId uint32) (*DataFile, error) {
-
-	return nil, nil
+	// dirpath\000000001.data
+	filename := filepath.Join(dirPath, fmt.Sprintf("%09d", fileId)+DataFileNameSuffix)
+	//初始化IO Manager文件管理接口，也就是打开了文件
+	ioManager, err := fio.NewIOManager(filename)
+	if err != nil {
+		return nil, err
+	}
+	return &DataFile{
+		FileId:    fileId,
+		WriteOff:  0,
+		ioManager: ioManager,
+	}, nil
 }
 
 // Write 文件的写入
 func (df *DataFile) Write(buf []byte) error {
+	n, err := df.ioManager.Write(buf)
+	if err != nil {
+		return err
+	}
+	//更新文件中writeoff的字段
+	df.WriteOff += int64(n)
+
 	return nil
 }
 
 // Sync 操作系统通常会使用缓存（如页面缓存）来提高性能，因此数据可能会暂时存储在内存中而未被写入硬盘，所以需要刷盘
 func (df *DataFile) Sync() error {
-	return nil
+	return df.ioManager.Sync()
 }
 
-// ReadLogRecord 文件的读取
+func (df *DataFile) Close() error {
+	return df.ioManager.Close()
+}
+
+// ReadLogRecord 文件的读取,根据offset去文件中读取相应的logRecord
 func (df *DataFile) ReadLogRecord(offset int64) (*LogRecord, int64, error) {
-	//todo 存储的是byte数组，应该再解码取出LogRecord结构体返回,职能问题
-	return nil, 0, nil
+	//先获取文件的大小
+	fileSize, err := df.ioManager.Size()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var headerBytes int64 = maxLogRecordHeaderSize
+	//如果该条记录是最后一条记录，且读取maxLogRecordHeaderSize超过文件大小了，就应该只读取到文件末尾
+	if offset+maxLogRecordHeaderSize > fileSize {
+		headerBytes = fileSize - offset
+	}
+
+	//读取header信息
+	headerBuf, err := df.ReadNBytes(headerBytes, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	//对header的字节数组进行解码
+	header, headerSize := DecodeLogRecordHeader(headerBuf)
+
+	//下面两个条件代表读取到了文件的末尾，直接返回错误即可
+	if header == nil {
+		return nil, 0, io.EOF
+	}
+	if header.crc == 0 && header.keySize == 0 && header.valueSize == 0 {
+		return nil, 0, io.EOF
+	}
+
+	LogRecord := &LogRecord{
+		Type: header.recordType,
+	}
+
+	//取出keySize和valSize
+	keySize, valSize := int64(header.keySize), int64(header.valueSize)
+	//返回的记录长度就是headerSize+keySize+valSize
+	recordSize := headerSize + keySize + valSize
+
+	//根据size去读取用户实际的key和value
+	if keySize > 0 || valSize > 0 {
+		b1, err := df.ReadNBytes(keySize, offset+headerSize)
+		if err != nil {
+			return nil, 0, err
+		}
+		b2, err := df.ReadNBytes(valSize, offset+headerSize+keySize)
+		if err != nil {
+			return nil, 0, err
+		}
+		//fixme
+		LogRecord.Key = b1
+		LogRecord.Value = b2
+	}
+
+	//用crc校验数据的有效性
+	crc := getLogRecordCRC(LogRecord, headerBuf[crc32.Size:headerSize]) //从crc后面开始到header结束
+	if crc != header.crc {
+		return nil, 0, ErrInvalidCRC
+	}
+	return LogRecord, recordSize, nil
+}
+
+// ReadNBytes 调用io管理中的read方法读取字节
+func (df *DataFile) ReadNBytes(n, offset int64) (b []byte, err error) {
+	b = make([]byte, n)
+	_, err = df.ioManager.Read(b, offset)
+	if err != nil {
+		return
+	}
+	return
 }

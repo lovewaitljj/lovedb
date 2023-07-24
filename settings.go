@@ -16,3 +16,10 @@ type Options struct {
 	//用户指定索引类型
 	IndexType index.IndexerType
 }
+
+var DefaultOptions = Options{
+	DirPath:      "tmp",
+	DataFileSize: 256 * 1024 * 1024, //256MB
+	SyncWrite:    false,
+	IndexType:    index.BTree,
+}

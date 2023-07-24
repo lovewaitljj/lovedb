@@ -7,7 +7,7 @@ type FileIO struct {
 	fd *os.File //系统文件描述符
 }
 
-// NewFileIoManager  初始化标准文件IO
+// NewFileIoManager  初始化标准文件IO,打开文件
 func NewFileIoManager(filename string) (*FileIO, error) {
 	fd, err := os.OpenFile(
 		filename,                          //路径加文件名
@@ -35,4 +35,12 @@ func (f FileIO) Sync() error {
 
 func (f FileIO) Close() error {
 	return f.fd.Close()
+}
+
+func (f FileIO) Size() (int64, error) {
+	stat, err := f.fd.Stat()
+	if err != nil {
+		return 0, err
+	}
+	return stat.Size(), err
 }

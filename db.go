@@ -274,6 +274,7 @@ func (db *DB) loadDataFiles() error {
 // 从数据文件中加载索引
 // 遍历文件中所有记录，并更新到索引上去
 func (db *DB) loadIndexFromDataFiles() error {
+	//如果是空文件则直接返回
 	if len(db.fileIds) == 0 {
 		return nil
 	}
@@ -313,7 +314,7 @@ func (db *DB) loadIndexFromDataFiles() error {
 			}
 			offset += size
 		}
-		//如果是当前活跃文件，更新这个文件的 WriteOff
+		//fixme 如果是当前活跃文件，更新这个文件的 WriteOff
 		if i == len(db.fileIds)-1 {
 			db.activeFile.WriteOff = offset
 		}

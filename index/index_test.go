@@ -11,7 +11,7 @@ func TestBtree_Put(t *testing.T) {
 	bt := NewBtree()
 
 	//插入nil
-	res1 := bt.put(nil, &data.LogRecordPos{
+	res1 := bt.Put(nil, &data.LogRecordPos{
 		Fid:    1,
 		Offset: 100,
 	})
@@ -19,7 +19,7 @@ func TestBtree_Put(t *testing.T) {
 	assert.True(t, res1)
 
 	//插入普通值
-	res2 := bt.put([]byte("a"), &data.LogRecordPos{
+	res2 := bt.Put([]byte("a"), &data.LogRecordPos{
 		Fid:    1,
 		Offset: 2,
 	})
@@ -29,7 +29,7 @@ func TestBtree_Put(t *testing.T) {
 func TestBtree_Get(t *testing.T) {
 	bt := NewBtree()
 
-	res1 := bt.put(nil, &data.LogRecordPos{
+	res1 := bt.Put(nil, &data.LogRecordPos{
 		Fid:    1,
 		Offset: 100,
 	})
@@ -39,12 +39,12 @@ func TestBtree_Get(t *testing.T) {
 	assert.Equal(t, uint32(1), pos1.Fid)
 	assert.Equal(t, int64(100), pos1.Offset)
 
-	res2 := bt.put([]byte("a"), &data.LogRecordPos{
+	res2 := bt.Put([]byte("a"), &data.LogRecordPos{
 		Fid:    1,
 		Offset: 2,
 	})
 	assert.True(t, res2)
-	res3 := bt.put([]byte("a"), &data.LogRecordPos{
+	res3 := bt.Put([]byte("a"), &data.LogRecordPos{
 		Fid:    1,
 		Offset: 3,
 	})
@@ -58,7 +58,7 @@ func TestBtree_Get(t *testing.T) {
 
 func TestBtree_Delete(t *testing.T) {
 	bt := NewBtree()
-	res1 := bt.put(nil, &data.LogRecordPos{
+	res1 := bt.Put(nil, &data.LogRecordPos{
 		Fid:    1,
 		Offset: 100,
 	})
@@ -67,7 +67,7 @@ func TestBtree_Delete(t *testing.T) {
 	del1 := bt.Delete(nil)
 	assert.True(t, del1)
 
-	res2 := bt.put([]byte("a"), &data.LogRecordPos{
+	res2 := bt.Put([]byte("a"), &data.LogRecordPos{
 		Fid:    1,
 		Offset: 2,
 	})

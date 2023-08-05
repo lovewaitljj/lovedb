@@ -97,9 +97,9 @@ func EncodeLogRecordPos(pos *LogRecordPos) []byte {
 // DecodeLogRecordPos 解码LogRecordPos
 func DecodeLogRecordPos(buf []byte) *LogRecordPos {
 	index := 0
-	fileId, n := binary.Varint(buf[:index])
+	fileId, n := binary.Varint(buf[index:])
 	index += n
-	offSet, n := binary.Varint(buf[:index])
+	offSet, n := binary.Varint(buf[index:])
 	logRecordPos := &LogRecordPos{
 		Fid:    uint32(fileId),
 		Offset: offSet,

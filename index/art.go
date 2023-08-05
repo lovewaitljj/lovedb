@@ -22,14 +22,14 @@ func NewART() *AdaptiveRadixTree {
 	}
 }
 
-func (art AdaptiveRadixTree) Put(key []byte, pos *data.LogRecordPos) bool {
+func (art *AdaptiveRadixTree) Put(key []byte, pos *data.LogRecordPos) bool {
 	art.lock.Lock()
 	defer art.lock.Unlock()
 	art.tree.Insert(key, pos)
 	return true
 }
 
-func (art AdaptiveRadixTree) Get(key []byte) *data.LogRecordPos {
+func (art *AdaptiveRadixTree) Get(key []byte) *data.LogRecordPos {
 	art.lock.RLock()
 	defer art.lock.RUnlock()
 	value, found := art.tree.Search(key)
@@ -41,26 +41,29 @@ func (art AdaptiveRadixTree) Get(key []byte) *data.LogRecordPos {
 
 }
 
-func (art AdaptiveRadixTree) Delete(key []byte) bool {
+func (art *AdaptiveRadixTree) Delete(key []byte) bool {
 	art.lock.Lock()
 	defer art.lock.Unlock()
 	_, isDeleted := art.tree.Delete(key)
 	return isDeleted
 }
 
-func (art AdaptiveRadixTree) Size() int {
+func (art *AdaptiveRadixTree) Size() int {
 	art.lock.RLock()
 	defer art.lock.RUnlock()
 	return art.tree.Size()
 }
 
-func (art AdaptiveRadixTree) Iterator(reverse bool) Iterator {
+func (art *AdaptiveRadixTree) Iterator(reverse bool) Iterator {
 	if art.tree == nil {
 		return nil
 	}
 	art.lock.RLock()
 	defer art.lock.RUnlock()
 	return NewArtIterator(art.tree, reverse)
+}
+func (art *AdaptiveRadixTree) Close() error {
+	return nil
 }
 
 // artIterator art索引迭代器
@@ -104,18 +107,18 @@ func NewArtIterator(tree goart.Tree, reverse bool) *artIterator {
 }
 
 // Rewind 重新回到迭代器的起点
-func (art artIterator) Rewind() {
+func (art *artIterator) Rewind() {
 	art.currIndex = 0
 }
 
 // Seek 根据传入的 key 查找到第一个大于(或小于)等于的目标 key，根据从这个 key 开始遍历
-func (art artIterator) Seek(key []byte) {
+func (art *artIterator) Seek(key []byte) {
 	//由于b树是有序的结构，我们想找到第一个大于等于的key，使用二分查找即可
 	art.binarySearch(key)
 }
 
 // binarySearch
-func (art artIterator) binarySearch(key []byte) {
+func (art *artIterator) binarySearch(key []byte) {
 	n := len(art.values)
 	l, r := 0, n-1
 	if !art.reverse {
@@ -141,23 +144,23 @@ func (art artIterator) binarySearch(key []byte) {
 	art.currIndex = l
 }
 
-func (art artIterator) Next() {
+func (art *artIterator) Next() {
 	art.currIndex++
 }
 
 // Valid 表示当前的索引是否有效，超过长度就无效了
-func (art artIterator) Valid() bool {
+func (art *artIterator) Valid() bool {
 	return art.currIndex < len(art.values)
 }
 
-func (art artIterator) Key() []byte {
+func (art *artIterator) Key() []byte {
 	return art.values[art.currIndex].key
 }
 
-func (art artIterator) Value() *data.LogRecordPos {
+func (art *artIterator) Value() *data.LogRecordPos {
 	return art.values[art.currIndex].pos
 }
 
-func (art artIterator) Close() {
+func (art *artIterator) Close() {
 	art.values = nil
 }

@@ -13,6 +13,7 @@ const (
 	DataFileNameSuffix    = ".data"
 	HintFileName          = "hint-index"
 	MergeFinishedFileName = "merge-finished"
+	SeqNoFileName         = "seq-no"
 )
 
 var (
@@ -24,7 +25,7 @@ var (
 type DataFile struct {
 	FileId    uint32        //文件id
 	WriteOff  int64         //文件写到了哪个位置
-	ioManager fio.IoManager //用于数据读写的抽象接口，
+	IoManager fio.IoManager //用于数据读写的抽象接口，
 }
 
 // OpenDataFile 打开新的数据文件
@@ -47,6 +48,12 @@ func OpenMergeFinishedFile(dirPath string) (*DataFile, error) {
 	return newDataFile(filename, 0)
 }
 
+// OpenSeqNoFile 存储事务序列号的文件
+func OpenSeqNoFile(dirPath string) (*DataFile, error) {
+	filename := filepath.Join(dirPath, SeqNoFileName)
+	return newDataFile(filename, 0)
+}
+
 func GetDataFileName(dirPath string, fileId uint32) string {
 	return filepath.Join(dirPath, fmt.Sprintf("%09d", fileId)+DataFileNameSuffix)
 }
@@ -59,13 +66,13 @@ func newDataFile(fileName string, fileID uint32) (*DataFile, error) {
 	return &DataFile{
 		FileId:    fileID,
 		WriteOff:  0,
-		ioManager: ioManager,
+		IoManager: ioManager,
 	}, nil
 }
 
 // Write 文件的写入
 func (df *DataFile) Write(buf []byte) error {
-	n, err := df.ioManager.Write(buf)
+	n, err := df.IoManager.Write(buf)
 	if err != nil {
 		return err
 	}
@@ -88,17 +95,17 @@ func (df *DataFile) WriteHintRecord(key []byte, pos *LogRecordPos) error {
 
 // Sync 操作系统通常会使用缓存（如页面缓存）来提高性能，因此数据可能会暂时存储在内存中而未被写入硬盘，所以需要刷盘
 func (df *DataFile) Sync() error {
-	return df.ioManager.Sync()
+	return df.IoManager.Sync()
 }
 
 func (df *DataFile) Close() error {
-	return df.ioManager.Close()
+	return df.IoManager.Close()
 }
 
 // ReadLogRecord 文件的读取,根据offset去文件中读取相应的logRecord
 func (df *DataFile) ReadLogRecord(offset int64) (*LogRecord, int64, error) {
 	//先获取文件的大小
-	fileSize, err := df.ioManager.Size()
+	fileSize, err := df.IoManager.Size()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -160,7 +167,7 @@ func (df *DataFile) ReadLogRecord(offset int64) (*LogRecord, int64, error) {
 // ReadNBytes 调用io管理中的read方法读取字节
 func (df *DataFile) ReadNBytes(n, offset int64) (b []byte, err error) {
 	b = make([]byte, n)
-	_, err = df.ioManager.Read(b, offset)
+	_, err = df.IoManager.Read(b, offset)
 	if err != nil {
 		return
 	}

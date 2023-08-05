@@ -3,6 +3,7 @@ package lovedb
 import (
 	"encoding/binary"
 	"lovedb/data"
+	"lovedb/index"
 	"sync"
 	"sync/atomic"
 )
@@ -22,6 +23,11 @@ type WriteBatch struct {
 //初始化WriteBatch
 
 func (db *DB) NewWriteBatch(opts WriteBatchOption) *WriteBatch {
+	//如果索引类型为B+树，且不存在事务序列号文件，且不是第一次初始化目录，则无法使用原子写
+	if db.options.IndexType == index.BPTree && !db.seqNoFileExists && !db.isInitial {
+		panic("cannot use writeBatch, seqNo file not exists ")
+	}
+
 	return &WriteBatch{
 		options:       opts,
 		mu:            new(sync.Mutex),

@@ -1,7 +1,20 @@
 package lovedb
 
-import (
-	"lovedb/index"
+import "lovedb/index"
+
+// 索引类型选择
+
+type IndexerType uint8
+
+const (
+	// BTree Btree索引
+	BTree IndexerType = iota + 1
+
+	// ART 自适应基数树索引
+	ART
+
+	// BPTree B+树索引类型
+	BPTree
 )
 
 // Options 配置文件，数据库启动，用户传递过去的配置信息

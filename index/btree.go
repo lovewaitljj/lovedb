@@ -58,12 +58,11 @@ func (b *Btree) Delete(key []byte) bool {
 
 // Iterator 初始化迭代器
 func (b *Btree) Iterator(reverse bool) Iterator {
-	if b.tree == nil {
-		return nil
-	}
-	b.lock.RLock()
-	defer b.lock.RUnlock()
 	return NewBTreeIterator(b.tree, reverse)
+}
+
+func (b *Btree) Close() error {
+	return nil
 }
 
 // BtreeIterator BTree索引迭代器

@@ -9,7 +9,11 @@ import (
 	"path/filepath"
 )
 
-const DataFileNameSuffix = ".data"
+const (
+	DataFileNameSuffix    = ".data"
+	HintFileName          = "hint-index"
+	MergeFinishedFileName = "merge-finished"
+)
 
 var (
 	ErrInvalidCRC = errors.New("invalid crc value, log record maybe corrupted")
@@ -26,14 +30,34 @@ type DataFile struct {
 // OpenDataFile 打开新的数据文件
 func OpenDataFile(dirPath string, fileId uint32) (*DataFile, error) {
 	// dirpath\000000001.data
-	filename := filepath.Join(dirPath, fmt.Sprintf("%09d", fileId)+DataFileNameSuffix)
+	filename := GetDataFileName(dirPath, fileId)
 	//初始化IO Manager文件管理接口，也就是打开了文件
-	ioManager, err := fio.NewIOManager(filename)
+	return newDataFile(filename, fileId)
+}
+
+// OpenHintFile 打开新的hint索引文件
+func OpenHintFile(dirPath string) (*DataFile, error) {
+	filename := filepath.Join(dirPath, HintFileName)
+	return newDataFile(filename, 0)
+}
+
+// OpenMergeFinishedFile  打开标识merge完成的文件
+func OpenMergeFinishedFile(dirPath string) (*DataFile, error) {
+	filename := filepath.Join(dirPath, MergeFinishedFileName)
+	return newDataFile(filename, 0)
+}
+
+func GetDataFileName(dirPath string, fileId uint32) string {
+	return filepath.Join(dirPath, fmt.Sprintf("%09d", fileId)+DataFileNameSuffix)
+}
+
+func newDataFile(fileName string, fileID uint32) (*DataFile, error) {
+	ioManager, err := fio.NewIOManager(fileName)
 	if err != nil {
 		return nil, err
 	}
 	return &DataFile{
-		FileId:    fileId,
+		FileId:    fileID,
 		WriteOff:  0,
 		ioManager: ioManager,
 	}, nil
@@ -49,6 +73,17 @@ func (df *DataFile) Write(buf []byte) error {
 	df.WriteOff += int64(n)
 
 	return nil
+}
+
+// WriteHintRecord 写入索引信息到hint文件中
+func (df *DataFile) WriteHintRecord(key []byte, pos *LogRecordPos) error {
+	record := &LogRecord{
+		Key:   key,
+		Value: EncodeLogRecordPos(pos),
+	}
+	encodeRecord, _ := EncodeLogRecord(record)
+	return df.Write(encodeRecord)
+
 }
 
 // Sync 操作系统通常会使用缓存（如页面缓存）来提高性能，因此数据可能会暂时存储在内存中而未被写入硬盘，所以需要刷盘

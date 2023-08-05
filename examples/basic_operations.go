@@ -7,7 +7,7 @@ import (
 
 func main() {
 	ops := bitcask.DefaultOptions
-	ops.DirPath = "D:\\git_space\\lovedb\\tmp"
+	ops.DirPath = "D:/git_space/lovedb/tmp"
 	db, err := bitcask.Open(ops)
 	if err != nil {
 		panic(err)

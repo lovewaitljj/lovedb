@@ -10,7 +10,12 @@ type LogRecordType = byte
 
 const (
 	LogRecordNormal LogRecordType = iota
+
+	// LogRecordDeleted 删除类型的记录
 	LogRecordDeleted
+
+	// LogRecordFinished 批量数据提交的fin标记记录
+	LogRecordFinished
 )
 
 // crc type keySize valSize      （key和val 的size为变长元素）
@@ -39,6 +44,12 @@ type LogRecord struct {
 type LogRecordPos struct {
 	Fid    uint32 // 文件id，表示将数据存放到磁盘的哪一个文件里
 	Offset int64  //偏移，表示将数据存储到文件中的哪一个位置
+}
+
+// TxRecord 暂存的事务相关的数据，当碰到fin字段，就将前面所有TxRecord更新到索引，需要记录type，key以及pos，所以组合在一起一个结构体
+type TxRecord struct {
+	Record *LogRecord
+	Pos    *LogRecordPos
 }
 
 // EncodeLogRecord 将logRecord转化为字节数组写入到文件中,并返回长度
@@ -72,6 +83,28 @@ func EncodeLogRecord(logRecord *LogRecord) ([]byte, int64) {
 	//PutUint32用于将无符号 32 位整数值编码为字节切片。
 	binary.LittleEndian.PutUint32(resBytes[:4], crc)
 	return resBytes, int64(size)
+}
+
+// EncodeLogRecordPos 将logRecordPos转化为字节数组写入到文件中,并返回
+func EncodeLogRecordPos(pos *LogRecordPos) []byte {
+	buf := make([]byte, binary.MaxVarintLen32+binary.MaxVarintLen64)
+	index := 0
+	index += binary.PutVarint(buf[index:], int64(pos.Fid))
+	index += binary.PutVarint(buf[index:], pos.Offset)
+	return buf[:index]
+}
+
+// DecodeLogRecordPos 解码LogRecordPos
+func DecodeLogRecordPos(buf []byte) *LogRecordPos {
+	index := 0
+	fileId, n := binary.Varint(buf[:index])
+	index += n
+	offSet, n := binary.Varint(buf[:index])
+	logRecordPos := &LogRecordPos{
+		Fid:    uint32(fileId),
+		Offset: offSet,
+	}
+	return logRecordPos
 }
 
 // DecodeLogRecordHeader 对头部信息的字节数组进行解码得到LogRecordHeader结构体记录,返回结构体和header的长度

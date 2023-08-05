@@ -27,14 +27,13 @@ const (
 	ART
 )
 
-// NewIndexer 根据用户传递的不同类型而实例化不同的内存数据结构
-func NewIndexer(typ IndexerType) Indexer {
+// NewIndexer 根据用户传递的不同类型而实例化不同的内存数据结构,dirpath代表b+树存储的硬盘位置
+func NewIndexer(typ IndexerType, dirPath string) Indexer {
 	switch typ {
 	case BTree:
 		return NewBtree()
 	case ART:
-		//todo
-		return nil
+		return NewART()
 	default:
 		panic("unsupported index type")
 	}

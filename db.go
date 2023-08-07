@@ -2,8 +2,11 @@ package lovedb
 
 import (
 	"errors"
+	"fmt"
+	"github.com/gofrs/flock"
 	"io"
 	"lovedb/data"
+	"lovedb/fio"
 	"lovedb/index"
 	"os"
 	"path/filepath"
@@ -28,10 +31,15 @@ type DB struct {
 	seqNoFileExists bool                      //存储事务序列号的文件是否存在
 
 	//用于判断能否事务写：如果索引类型为B+树，且不存在事务序列号文件，且不是第一次初始化目录，则无法使用原子写
-	isInitial bool //是否是第一次初始化此数据目录
+	isInitial  bool         //是否是第一次初始化此数据目录
+	fileLock   *flock.Flock //文件锁保证多进程之间的互斥
+	bytesWrite uint         //累计写了多少字节
 }
 
-const seqNoKey = "seq.no"
+const (
+	seqNoKey     = "seq.no"
+	fileLockName = "flock"
+)
 
 // Open 数据库启动时打开bitcask引擎实例
 func Open(options Options) (*DB, error) {
@@ -47,6 +55,17 @@ func Open(options Options) (*DB, error) {
 		if err := os.MkdirAll(options.DirPath, os.ModePerm); err != nil {
 			return nil, err
 		}
+	}
+
+	//尝试获取文件锁flock，没拿到就返回，保证单线程操作目录
+	//为了最后关闭，所以要放到我们的db结构体里
+	fileLock := flock.New(filepath.Join(options.DirPath, fileLockName))
+	hold, err := fileLock.TryRLock()
+	if err != nil {
+		return nil, err
+	}
+	if !hold {
+		return nil, ErrDatabaseIsUsing
 	}
 
 	//目录存在但是为空，没有文件，也为true
@@ -66,6 +85,7 @@ func Open(options Options) (*DB, error) {
 		//根据用户传过来的类型而去创建相应的内存数据结构
 		index:     index.NewIndexer(options.IndexType, options.DirPath, options.SyncWrite),
 		isInitial: isInitial,
+		fileLock:  fileLock,
 	}
 
 	//加载merge数据目录
@@ -89,6 +109,14 @@ func Open(options Options) (*DB, error) {
 		if err := db.loadIndexFromDataFiles(); err != nil {
 			return nil, err
 		}
+
+		//重置IO类型为标准文件IO
+		if db.options.MMapAtStartUp {
+			if err := db.resetToType(); err != nil {
+				return nil, err
+			}
+		}
+
 	} else {
 		//如果是B+树索引，需要打开特定文件取出最新事务号
 		err := db.loadSeqNo()
@@ -212,6 +240,13 @@ func (db *DB) Fold(fun func(key []byte, value []byte) bool) error {
 
 // Close 关闭数据库
 func (db *DB) Close() error {
+	defer func() {
+		err := db.fileLock.Close()
+		if err != nil {
+			panic(fmt.Sprintf("failed to unlock the directory,%v", err))
+		}
+	}()
+
 	if db.activeFile == nil {
 		return nil
 	}
@@ -344,10 +379,21 @@ func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, er
 		return nil, err
 	}
 
+	db.bytesWrite += uint(size)
+
+	var needSync = db.options.SyncWrite
+	if !needSync && db.options.BytesPerSync > 0 && db.bytesWrite > db.options.BytesPerSync {
+		needSync = true
+	}
+
 	//根据用户配置项决定是否持久化
-	if db.options.SyncWrite {
+	if needSync {
 		if err := db.activeFile.Sync(); err != nil {
 			return nil, err
+		}
+		//清空累计值
+		if db.bytesWrite > 0 {
+			db.bytesWrite = 0
 		}
 	}
 
@@ -367,7 +413,7 @@ func (db *DB) setActiveDataFile() error {
 		initialFileId = db.activeFile.FileId + 1 //当前活跃文件已过期，设置它的下一个为活跃文件
 	}
 	//在配置文件给定的目录下，打开新的数据文件
-	dataFile, err := data.OpenDataFile(db.options.DirPath, initialFileId)
+	dataFile, err := data.OpenDataFile(db.options.DirPath, initialFileId, fio.StandardFIO)
 	if err != nil {
 		return err
 	}
@@ -404,7 +450,11 @@ func (db *DB) loadDataFiles() error {
 
 	//遍历每个文件id并对文件进行打开操作
 	for i, fileId := range fileIds {
-		dataFile, err := data.OpenDataFile(db.options.DirPath, uint32(fileId))
+		ioType := fio.StandardFIO
+		if db.options.MMapAtStartUp {
+			ioType = fio.MemoryMap
+		}
+		dataFile, err := data.OpenDataFile(db.options.DirPath, uint32(fileId), ioType)
 		if err != nil {
 			return err
 		}
@@ -564,4 +614,20 @@ func (db *DB) loadSeqNo() error {
 	db.seqNo = seqNo
 	db.seqNoFileExists = true
 	return os.Remove(fileName)
+}
+
+// 将数据文件的IO方式变为标准IO
+func (db *DB) resetToType() error {
+	if db.activeFile == nil {
+		return nil
+	}
+	if err := db.activeFile.SetIOManager(db.options.DirPath, fio.StandardFIO); err != nil {
+		return err
+	}
+	for _, file := range db.olderFiles {
+		if err := file.SetIOManager(db.options.DirPath, fio.StandardFIO); err != nil {
+			return err
+		}
+	}
+	return nil
 }

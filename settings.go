@@ -28,8 +28,14 @@ type Options struct {
 	//每次写数据是否持久化的配置项
 	SyncWrite bool
 
+	//累计的阈值直接进行自动持久化
+	BytesPerSync uint
+
 	//用户指定索引类型
 	IndexType index.IndexerType
+
+	//数据库启动时是否需要用mmap加载数据
+	MMapAtStartUp bool
 }
 
 type IteratorOptions struct {
@@ -48,10 +54,12 @@ type WriteBatchOption struct {
 }
 
 var DefaultOptions = Options{
-	DirPath:      "tmp",
-	DataFileSize: 256 * 1024 * 1024, //256MB
-	SyncWrite:    false,
-	IndexType:    index.BTree,
+	DirPath:       "tmp",
+	DataFileSize:  256 * 1024 * 1024, //256MB
+	SyncWrite:     false,
+	BytesPerSync:  0,
+	IndexType:     index.BTree,
+	MMapAtStartUp: true,
 }
 
 var DefaultIteratorOptions = IteratorOptions{

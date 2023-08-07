@@ -29,37 +29,37 @@ type DataFile struct {
 }
 
 // OpenDataFile 打开新的数据文件
-func OpenDataFile(dirPath string, fileId uint32) (*DataFile, error) {
+func OpenDataFile(dirPath string, fileId uint32, ioType fio.FileIOType) (*DataFile, error) {
 	// dirpath\000000001.data
 	filename := GetDataFileName(dirPath, fileId)
 	//初始化IO Manager文件管理接口，也就是打开了文件
-	return newDataFile(filename, fileId)
+	return newDataFile(filename, fileId, ioType)
 }
 
 // OpenHintFile 打开新的hint索引文件
 func OpenHintFile(dirPath string) (*DataFile, error) {
 	filename := filepath.Join(dirPath, HintFileName)
-	return newDataFile(filename, 0)
+	return newDataFile(filename, 0, fio.StandardFIO)
 }
 
 // OpenMergeFinishedFile  打开标识merge完成的文件
 func OpenMergeFinishedFile(dirPath string) (*DataFile, error) {
 	filename := filepath.Join(dirPath, MergeFinishedFileName)
-	return newDataFile(filename, 0)
+	return newDataFile(filename, 0, fio.StandardFIO)
 }
 
 // OpenSeqNoFile 存储事务序列号的文件
 func OpenSeqNoFile(dirPath string) (*DataFile, error) {
 	filename := filepath.Join(dirPath, SeqNoFileName)
-	return newDataFile(filename, 0)
+	return newDataFile(filename, 0, fio.StandardFIO)
 }
 
 func GetDataFileName(dirPath string, fileId uint32) string {
 	return filepath.Join(dirPath, fmt.Sprintf("%09d", fileId)+DataFileNameSuffix)
 }
 
-func newDataFile(fileName string, fileID uint32) (*DataFile, error) {
-	ioManager, err := fio.NewIOManager(fileName)
+func newDataFile(fileName string, fileID uint32, ioType fio.FileIOType) (*DataFile, error) {
+	ioManager, err := fio.NewIOManager(fileName, ioType)
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +162,21 @@ func (df *DataFile) ReadLogRecord(offset int64) (*LogRecord, int64, error) {
 		return nil, 0, ErrInvalidCRC
 	}
 	return LogRecord, recordSize, nil
+}
+
+// SetIOManager 对当前文件设置我们的io方式
+func (df *DataFile) SetIOManager(dirPath string, iotype fio.FileIOType) error {
+	//将当前io方式关闭
+	if err := df.IoManager.Close(); err != nil {
+		return err
+	}
+	//设置一个新的
+	ioManager, err := fio.NewIOManager(GetDataFileName(dirPath, df.FileId), iotype)
+	if err != nil {
+		return err
+	}
+	df.IoManager = ioManager
+	return nil
 }
 
 // ReadNBytes 调用io管理中的read方法读取字节

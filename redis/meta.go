@@ -2,6 +2,7 @@ package redis
 
 import (
 	"encoding/binary"
+	"lovedb/utils"
 	"math"
 )
 
@@ -74,13 +75,13 @@ func decode(buf []byte) *metaData {
 
 }
 
+// hash
 type hashDataKey struct {
 	key     []byte
 	version int64
 	field   []byte
 }
 
-// hash数据的编码
 func (h hashDataKey) encode() []byte {
 	buf := make([]byte, len(h.key)+len(h.field)+8)
 	//key
@@ -96,13 +97,12 @@ func (h hashDataKey) encode() []byte {
 	return buf
 }
 
+// set
 type setDataKey struct {
 	key     []byte
 	version int64
 	member  []byte
 }
-
-// set数据的编码
 
 func (sk *setDataKey) encode() []byte {
 	buf := make([]byte, len(sk.key)+len(sk.member)+8+4)
@@ -121,6 +121,85 @@ func (sk *setDataKey) encode() []byte {
 
 	// member size,最后四个字节放入member长度
 	binary.LittleEndian.PutUint32(buf[index:], uint32(len(sk.member)))
+
+	return buf
+}
+
+// list
+type listDataKey struct {
+	key     []byte
+	version int64
+	index   uint64
+}
+
+func (lk *listDataKey) encode() []byte {
+	buf := make([]byte, len(lk.key)+8+8)
+	// key
+	var index = 0
+	copy(buf[index:index+len(lk.key)], lk.key)
+	index += len(lk.key)
+
+	// version
+	binary.LittleEndian.PutUint64(buf[index:index+8], uint64(lk.version))
+	index += 8
+
+	// index
+	binary.LittleEndian.PutUint64(buf[index:], lk.index)
+	index += 8
+
+	return buf
+}
+
+// zset
+type ZSetDataKey struct {
+	key     []byte
+	version int64
+	member  []byte
+	score   float64
+}
+
+// 编码key + version + member 来获取score
+func (zk *ZSetDataKey) encodeWithMember() []byte {
+	buf := make([]byte, len(zk.key)+len(zk.member)+8)
+	// key
+	var index = 0
+	copy(buf[index:index+len(zk.key)], zk.key)
+	index += len(zk.key)
+
+	// version
+	binary.LittleEndian.PutUint64(buf[index:index+8], uint64(zk.version))
+	index += 8
+
+	// member
+	copy(buf[index:], zk.member)
+
+	return buf
+}
+
+// 编码key + score +version +member
+func (zk *ZSetDataKey) encodeWithScore() []byte {
+	scoreBuf := utils.Float64ToBytes(zk.score)
+	buf := make([]byte, len(zk.key)+len(zk.member)+8+len(scoreBuf)+8)
+
+	// key
+	var index = 0
+	copy(buf[index:index+len(zk.key)], zk.key)
+	index += len(zk.key)
+
+	// version
+	binary.LittleEndian.PutUint64(buf[index:index+8], uint64(zk.version))
+	index += 8
+
+	// scroe
+	copy(buf[index:index+len(scoreBuf)], scoreBuf)
+	index += len(scoreBuf)
+
+	//member
+	copy(buf[index:index+len(zk.member)], zk.member)
+	index += len(zk.member)
+
+	//memberSize 从最后四个字节拿到membersize，然后直接截取member
+	binary.LittleEndian.PutUint32(buf[index:], uint32(len(zk.member)))
 
 	return buf
 }

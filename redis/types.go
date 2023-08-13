@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"lovedb"
+	"lovedb/utils"
 	"time"
 )
 
@@ -271,6 +272,187 @@ func (rds *RedisDataStructure) SRem(key, member []byte) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// ================== List数据结构 ==================
+
+func (rds *RedisDataStructure) LPush(key, value []byte) (uint32, error) {
+	return rds.push(key, value, true)
+}
+
+func (rds *RedisDataStructure) RPush(key, value []byte) (uint32, error) {
+	return rds.push(key, value, false)
+}
+
+func (rds *RedisDataStructure) LPop(key []byte) ([]byte, error) {
+	return rds.pop(key, true)
+}
+
+func (rds *RedisDataStructure) RPop(key []byte) ([]byte, error) {
+	return rds.pop(key, false)
+}
+
+func (rds *RedisDataStructure) push(key, value []byte, isLeft bool) (uint32, error) {
+	meta, err := rds.findMetaData(key, List)
+	if err != nil {
+		return 0, err
+	}
+
+	//构造key
+	lk := listDataKey{
+		key:     key,
+		version: meta.version,
+	}
+	//head地方指向的是第一个值
+	if isLeft {
+		lk.index = meta.head - 1
+	} else {
+		//tail指向的最后一个值的下一位，可以直接进行插入
+		lk.index = meta.tail
+	}
+
+	//更新元数据和数据部分
+	wb := rds.db.NewWriteBatch(lovedb.DefaultWriteBatchOptions)
+	if isLeft {
+		meta.head--
+	} else {
+		meta.tail++
+	}
+	meta.size++
+	_ = wb.Put(key, meta.encode())
+	_ = wb.Put(lk.encode(), value)
+	err = wb.Commit()
+	if err != nil {
+		return 0, err
+	}
+	//返回key当下有多少数据
+	return meta.size, nil
+}
+
+func (rds *RedisDataStructure) pop(key []byte, isLeft bool) ([]byte, error) {
+	// 查找元数据
+	meta, err := rds.findMetaData(key, List)
+	if err != nil {
+		return nil, err
+	}
+	if meta.size == 0 {
+		return nil, nil
+	}
+
+	// 构造数据部分的 key
+	lk := &listDataKey{
+		key:     key,
+		version: meta.version,
+	}
+	if isLeft {
+		lk.index = meta.head
+	} else {
+		lk.index = meta.tail - 1
+	}
+	//找到要删除的元素地方
+	element, err := rds.db.Get(lk.encode())
+	if err != nil {
+		return nil, err
+	}
+	// 更新元数据
+	meta.size--
+	if isLeft {
+		meta.head++
+	} else {
+		meta.tail--
+	}
+	if err = rds.db.Put(key, meta.encode()); err != nil {
+		return nil, err
+	}
+
+	return element, nil
+
+}
+
+// ================== ZSet数据结构 ==================
+
+// ZAdd 例子：ZADD myset 10 "member1"
+func (rds *RedisDataStructure) ZAdd(key []byte, score float64, member []byte) (bool, error) {
+	// 查找元数据
+	meta, err := rds.findMetaData(key, List)
+	if err != nil {
+		return false, err
+	}
+
+	//构造key
+	zk := ZSetDataKey{
+		key:     key,
+		version: meta.version,
+		member:  member,
+		score:   score,
+	}
+	var exist = true
+
+	// 查看原来的member并且需要获取score，所以用到对member编码的函数
+	val, err := rds.db.Get(zk.encodeWithMember())
+	if err != nil && err != lovedb.ErrKeyNotFound {
+		return false, err
+	}
+	//如果不存在就继续
+	if err == lovedb.ErrKeyNotFound {
+		exist = false
+	}
+
+	//如果存在的话判断score值和用户传递的是否一致
+	if exist {
+		if score == utils.BytesToFloat64(val) {
+			return false, nil
+		}
+	}
+	//更新元数据和数据部分
+	wb := rds.db.NewWriteBatch(lovedb.DefaultWriteBatchOptions)
+	if !exist {
+		meta.size++
+		_ = wb.Put(key, meta.encode())
+	}
+	//如果存在的话要删除掉原来的旧key，因为后面遍历可能将旧的扫描出来
+	if exist {
+		oldKey := ZSetDataKey{
+			key:     key,
+			version: meta.version,
+			member:  member,
+			//旧的key的score的值
+			score: utils.BytesToFloat64(val),
+		}
+		_ = wb.Delete(oldKey.encodeWithScore())
+	}
+	_ = wb.Put(zk.encodeWithMember(), utils.Float64ToBytes(score))
+	_ = wb.Put(zk.encodeWithScore(), nil)
+	if err := wb.Commit(); err != nil {
+		return false, err
+	}
+	return !exist, nil
+}
+
+// ZScore 不支持score为负数
+func (rds *RedisDataStructure) ZScore(key []byte, member []byte) (float64, error) {
+	// 查找元数据
+	meta, err := rds.findMetaData(key, List)
+	if err != nil {
+		return -1, err
+	}
+
+	if meta.size == 0 {
+		return -1, err
+	}
+
+	//构造key
+	zk := ZSetDataKey{
+		key:     key,
+		version: meta.version,
+		member:  member,
+	}
+	score, err := rds.db.Get(zk.encodeWithMember())
+	if err != nil {
+		return -1, err
+	}
+
+	return utils.BytesToFloat64(score), nil
 }
 
 // =====================工具方法===========================

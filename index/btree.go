@@ -21,12 +21,15 @@ func NewBtree() *Btree {
 	}
 }
 
-func (b *Btree) Put(key []byte, pos *data.LogRecordPos) bool {
+func (b *Btree) Put(key []byte, pos *data.LogRecordPos) *data.LogRecordPos {
 	it := &Item{key: key, pos: pos}
 	b.lock.Lock()
 	defer b.lock.Unlock()
-	b.tree.ReplaceOrInsert(it)
-	return true
+	oldItem := b.tree.ReplaceOrInsert(it)
+	if oldItem == nil {
+		return nil
+	}
+	return oldItem.(*Item).pos
 }
 
 func (b *Btree) Get(key []byte) *data.LogRecordPos {
@@ -44,16 +47,16 @@ func (b *Btree) Size() int {
 	return b.tree.Len()
 }
 
-func (b *Btree) Delete(key []byte) bool {
+func (b *Btree) Delete(key []byte) (*data.LogRecordPos, bool) {
 	it := &Item{key: key}
 	b.lock.Lock()
 	defer b.lock.Unlock()
 	oldItem := b.tree.Delete(it)
 	//通过判断旧值存不存在而反应操作是否有效
 	if oldItem == nil {
-		return false
+		return nil, false
 	}
-	return true
+	return oldItem.(*Item).pos, true
 }
 
 // Iterator 初始化迭代器

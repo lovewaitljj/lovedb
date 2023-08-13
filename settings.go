@@ -36,6 +36,9 @@ type Options struct {
 
 	//数据库启动时是否需要用mmap加载数据
 	MMapAtStartUp bool
+
+	//数据文件合并的阈值(无效数据占的比例为多少)
+	DataFileMergeRatio float32
 }
 
 type IteratorOptions struct {
@@ -54,15 +57,21 @@ type WriteBatchOption struct {
 }
 
 var DefaultOptions = Options{
-	DirPath:       "tmp",
-	DataFileSize:  256 * 1024 * 1024, //256MB
-	SyncWrite:     false,
-	BytesPerSync:  0,
-	IndexType:     index.BTree,
-	MMapAtStartUp: true,
+	DirPath:            "D:\\git_space\\lovedb\\tmp",
+	DataFileSize:       256 * 1024 * 1024, //256MB
+	SyncWrite:          false,
+	BytesPerSync:       0,
+	IndexType:          index.BTree,
+	MMapAtStartUp:      true,
+	DataFileMergeRatio: 0.5,
 }
 
 var DefaultIteratorOptions = IteratorOptions{
 	Prefix:  nil,
 	Reverse: false,
+}
+
+var DefaultWriteBatchOptions = WriteBatchOption{
+	MaxBatchNum: 10000,
+	SyncWrites:  true,
 }

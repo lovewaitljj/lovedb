@@ -3,6 +3,7 @@ package lovedb
 import (
 	"io"
 	"lovedb/data"
+	"lovedb/utils"
 	"os"
 	"path"
 	"path/filepath"
@@ -27,6 +28,29 @@ func (db *DB) Merge() error {
 	if db.isMerging {
 		db.mu.Unlock()
 		return ErrMergeIsProgress
+	}
+
+	//查看merge的数据量是否达到阈值
+	totalSize, err := utils.DirSize(db.options.DirPath)
+	if err != nil {
+		db.mu.Unlock()
+		return err
+	}
+	// 无效数据的数量 除以 所有数据的数量   如果 小于  用户要求的 阈值
+	if float32(db.reclaimSize)/float32(totalSize) < db.options.DataFileMergeRatio {
+		db.mu.Unlock()
+		return ErrMergeRatioUnreached
+	}
+
+	//看我们剩余磁盘容量能否供我们merge以后的数据量
+	availableDiskSize, err := utils.AvailableDiskSize()
+	if err != nil {
+		db.mu.Unlock()
+		return err
+	}
+	if uint64(totalSize-db.reclaimSize) > availableDiskSize {
+		db.mu.Unlock()
+		return ErrNoEnoughSpaceForMerge
 	}
 
 	db.isMerging = true
@@ -185,6 +209,9 @@ func (db *DB) loadMergeFiles() error {
 			mergeFinished = true
 		}
 		if file.Name() == data.SeqNoFileName {
+			continue
+		}
+		if file.Name() == fileLockName {
 			continue
 		}
 		mergeFileNames = append(mergeFileNames, file.Name())

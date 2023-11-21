@@ -1,4 +1,4 @@
-module lovedb
+module github.com/lovewaitljj/lovedb
 
 go 1.20
 
